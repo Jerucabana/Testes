@@ -1,0 +1,914 @@
+/// <reference path="../../sed-app.ts" />
+/// <reference path="../../services/gestao-pix-service.ts" />
+
+namespace sed {
+    export class ListarPixCtrl implements ng.IController {
+
+        public tipoConsulta: string;
+        public cabecalhoTela: String;
+        public dataInvalidaFimPsq: boolean = false;
+        public dataInvalidaIniPsq: boolean = false;
+        public dataFuturaFimPsq: boolean = false;
+        public dataFuturaIniPsq: boolean = false;
+        public dataFimPsqMenorPsq: boolean = false;
+        public dataPeriodoPesquisaSuperior: boolean = false;
+        public popupPsqIni = { opened: false };
+        public popupPsqFim = { opened: false };
+        public dataIniPsq: Date = new Date();
+        public dataFimPsq: Date = new Date();
+        public cpfCnpj: string = '';
+        public isCpfCnpjRecebedor: boolean;
+        public agencia: any;
+        public conta: any;
+        private codigoEstadoPagamento: any;
+        private listaEstados: Array<any>;
+        private siglaSistemaInicioPagamento: string;
+        public campoObrigatorio: boolean = false;
+        public grupoCampoObrigatorio: boolean = false;
+        private indicadorPosicao: number = 1;
+        public exibirListaPix: boolean = false;
+        private listaRespostaPix: any = [];
+        public listaTablePix: any;
+        private origemTotalizador: boolean = false;
+        private origemTotalizadorQrcode: boolean = false;
+        public horaInicio: string;
+        public horaFim: string;
+        public horaInicioObrigatoria: boolean = false;
+        public horaFimObrigatoria: boolean = false;
+        public horaInicioInvalida: boolean = false;
+        public minutoInicioInvalido: boolean = false;
+        public horaFimInvalida: boolean = false;
+        public minutoFimInvalido: boolean = false;
+        public dataAtual: Date = new Date();
+        private usuarioLogado: any;
+        public listaMsg: any[];
+        public identificador: string;
+        private indicadorPagamentoQrcode: string;
+        public tipoOrigemCpfCnpjSelecionado: number;
+        public tipoOrigemCpfCnpj: any;
+        public listaTipoOrigemCpfCnpj: any;
+        public dadosCliente: any;
+        public cpfCnpjRecebedor: string;
+        public valor: any;
+        public tipoEstado: any;
+        private indicadorContribuinteCreditado: string;
+        private codigoTipoPessoa: number = 0;
+        public showColumnOrigDest: boolean = false;
+        public listaTipoEstado: any;
+        public listaTipoConta: any;
+        public tipoConta: any;
+        public tipoContaObrigatorio: boolean;
+        public filterEstado: any = {};
+        public listaInstituicoesFinanceiras: Array<any> = [];
+
+        private todasInstituicoes = {
+            'codigoIdentificadorSisPgtoBrlInstituicaoFinanceira': '100000000',
+            'nomeInstituicaoFinanceiraSistemaPagamentoBrasileiro': 'Todas',
+            'codigoClearingPagamento': 0,
+            'nomeClearingPagamento': '',
+            'codigoProdutoSistemaPagamentoBrasileiro': 0,
+            'nomeReduzidoProduto': '',
+            'codigoIdentificadorSisPgtoBrlParticipacao': '100000000',
+            'codigoCompensacaoParticipacao': 0,
+            'dataInicioParticipacao': '',
+            'dataFimParticipacao': '',
+            'indicadorAtividade': '',
+            'codigoEstadoParticipacao': 0,
+            'nomeEstadoParticipacao': ''
+        };
+
+        static $inject = [
+            'GAWHubClient',
+            '$bbModal',
+            '$rootScope',
+            '$scope',
+            '$routeParams',
+            'gestaoPixService',
+            'NgTableParams',
+            '$location',
+            '$filter',
+            '$q'
+        ];
+
+        public instituicaoFinanceira: {
+            codigoIdentificadorSisPgtoBrlInstituicaoFinanceira: string,
+            nomeInstituicaoFinanceiraSistemaPagamentoBrasileiro: string,
+            codigoClearingPagamento: number,
+            nomeClearingPagamento: string,
+            codigoProdutoSistemaPagamentoBrasileiro: number,
+            nomeReduzidoProduto: string,
+            codigoIdentificadorSisPgtoBrlParticipacao: string,
+            codigoCompensacaoParticipacao: number,
+            dataInicioParticipacao: string,
+            dataFimParticipacao: string,
+            indicadorAtividade: string,
+            codigoEstadoParticipacao: number,
+            nomeEstadoParticipacao: string
+        };
+
+        public tipoInstituicao: any;
+
+        constructor(
+            private GAWHubClient: any,
+            private $bbModal: any,
+            private $rootScope: any,
+            private $scope: any,
+            private $routeParams: any,
+            private gestaoPixService: services.GestaoPixService,
+            private NgTableParams: any,
+            private $location: any,
+            private $filter: any,
+            private $q: any
+        ) {
+
+            this.recuperaUsuario();
+            this.pesquisarEstados();
+
+            this.listaTablePix = this.$rootScope.listaTablePix;
+            this.identificador = this.$rootScope.identificador;
+            this.tipoConsulta = this.$routeParams['tipoConsulta'];
+            this.instituicaoFinanceira = this.todasInstituicoes;
+
+            this.listaTipoConta = [
+                { codigo: 0, descricao: 'Selecione...' },
+                { codigo: 1, descricao: 'Conta Corrente' },
+                { codigo: 2, descricao: 'Conta Poupança' }
+            ];
+            this.tipoConta = this.getTipoConta(0);
+
+            if ((this.listaTablePix !== undefined && this.listaTablePix.data.length > 0) || this.$rootScope.origemConsultaTotalizador) {
+                this.carregarRootScopeInit();
+            } else {
+                this.horaInicio = '000000';
+                this.horaFim = '235959';
+                this.carregarListaInstituicaoFinanceira(0);
+            }
+
+            this.listaTipoEstado = [
+                { codigo: 0, descricao: 'Todos' },
+                { codigo: 1, descricao: 'Processados' },
+                { codigo: 2, descricao: 'Recusados' },
+                { codigo: 3, descricao: 'Devolvidos' }
+            ];
+
+            this.tipoEstado = this.getTipoEstado(0);
+
+            this.listaTipoOrigemCpfCnpj = [
+                { codigo: 1, descricao: 'Pagador' },
+                { codigo: 2, descricao: 'Recebedor' },
+                { codigo: 3, descricao: 'Pagador e Recebedor' }
+            ];
+
+            this.tipoInstituicao = this.tipoConsulta === 'enviados' ? 'Recebedora' : 'Pagadora';
+            this.tipoOrigemCpfCnpj = this.getTipoOrigemCpfCnpj(1);
+            this.tipoOrigemCpfCnpjSelecionado = this.tipoOrigemCpfCnpj.codigo;
+
+        }
+
+        private carregarRootScopeInit(): void {
+             this.dataIniPsq = this.$rootScope.dataIniPsq;
+            this.dataFimPsq = this.$rootScope.dataFimPsq;
+            this.horaInicio = this.$rootScope.horaInicio;
+            this.horaFim = this.$rootScope.horaFim;
+            this.agencia = this.$rootScope.agencia;
+            this.conta = this.$rootScope.conta;
+            this.tipoConta = this.isExist(this.$rootScope.tipoConta) ?
+                                this.getTipoConta(this.$rootScope.tipoConta.codigo) : undefined;
+            this.cpfCnpj = this.$rootScope.cpfCnpj;
+            this.isCpfCnpjRecebedor = this.$rootScope.isCpfCnpjRecebedor;
+            this.identificador = '';
+            this.origemTotalizador = this.$rootScope.origemConsultaTotalizador;
+            this.origemTotalizadorQrcode = this.$rootScope.origemConsultaTotalizadorQrcode;
+            if (this.origemTotalizador && (this.listaTablePix === undefined || this.listaTablePix.data.length <= 0)) {
+                this.listarPix();
+            } else {
+                this.exibirListaPix = true;
+                this.filterEstado.textoEstadoAtualPagamento = '';
+            }
+            this.listaInstituicoesFinanceiras = this.$rootScope.listaInstituicoesFinanceiras;
+            this.tipoOrigemCpfCnpj = this.isExist(this.$rootScope.tipoOrigemCpfCnpj) ?
+                                    this.getTipoOrigemCpfCnpj(this.$rootScope.tipoOrigemCpfCnpj.codigo) : this.getTipoOrigemCpfCnpj(1);
+            console.log ('tipoOrigemCpfCnpj: ', this.tipoOrigemCpfCnpj);
+            this.tipoOrigemCpfCnpjSelecionado = this.tipoOrigemCpfCnpj.codigo;
+            this.tipoEstado = this.isExist(this.$rootScope.tipoEstado) ? this.getTipoEstado(this.$rootScope.tipoEstado.codigo) : this.getTipoEstado(0);
+        }
+
+        private getTipoConta(codigo: number): any {
+            return this.listaTipoConta.find( item => item.codigo === codigo );
+        }
+
+        private getTipoEstado(codigo: number): any {
+            return this.listaTipoEstado.find( item => item.codigo === codigo );
+        }
+
+        private getTipoOrigemCpfCnpj(codigo: number): any {
+            console.log('getTipoOrigemCpfCnpj codigo:', codigo);
+            console.log('this.listaTipoOrigemCpfCnpj:', this.listaTipoOrigemCpfCnpj);
+
+            if (Array.isArray(this.listaTipoOrigemCpfCnpj)) {
+                const resultado = this.listaTipoOrigemCpfCnpj.find(item => item.codigo === codigo);
+                console.log('Resultado do find:', resultado);
+                return resultado;
+            } else {
+                console.error('this.listaTipoOrigemCpfCnpj não é um array');
+                return null; // Ou um valor padrão adequado
+            }
+        }
+
+        limpar(): void {
+            this.clearMessages();
+            this.horaInicio = '000000';
+            this.horaFim = '235959';
+            this.dataIniPsq = new Date();
+            this.dataFimPsq = new Date();
+            this.$rootScope.origemConsultaTotalizador = false;
+            this.origemTotalizador = false;
+            this.agencia = undefined;
+            this.conta = undefined;
+            this.cpfCnpj = '';
+            this.indicadorPosicao = 1;
+            this.indicadorContribuinteCreditado = '';
+            this.identificador = '';
+            this.exibirListaPix = false;
+            this.listaTablePix = undefined;
+            this.tipoConta = this.listaTipoConta[0];
+            this.tipoContaObrigatorio = false;
+            this.dataInvalidaFimPsq = false;
+            this.dataInvalidaIniPsq = false;
+            this.dataFuturaFimPsq = false;
+            this.dataFuturaIniPsq = false;
+            this.dataFimPsqMenorPsq = false;
+            this.dataPeriodoPesquisaSuperior = false;
+            this.tipoEstado = this.listaTipoEstado[0];
+        }
+
+        private pesquisarEstados(): void {
+            // let tipoEstado = this.tipoConsulta === 'enviados' ? 'S1' : 'S2';
+            this.gestaoPixService.consultarEstados('N', 'S1')
+            .then( response => {
+                this.listaEstados = response.data['data'].listaOcorrencia;
+                this.gestaoPixService.consultarEstados('N', 'S2')
+                .then( responseRecebido => {
+                    this.listaEstados = this.listaEstados.concat(responseRecebido.data['data'].listaOcorrencia);
+                });
+            });
+        }
+        private recuperaUsuario(): void {
+            this.GAWHubClient.getAmbiente( ambiente => {
+                this.usuarioLogado = ambiente.funci;
+            });
+        }
+
+        efetuarPesquisa(): void {
+            this.clearMessages();
+            this.limpaAtributos();
+            if (this.hasIdentificador()) {
+                this.consultarPix();
+            } else {
+                if (!this.verificaDatasPesquisa()) {
+                    return;
+                }
+                this.listaRespostaPix = [];
+                this.listarPix();
+            }
+        }
+
+        private consultarPix(): void {
+            this.grupoCampoObrigatorio = this.hasIdentificador() && (this.validaDadosBancariosGrupo() || this.hasCpfCnpj());
+            if (!this.grupoCampoObrigatorio) {
+                this.exibirListaPix = false;
+                this.$rootScope.pagamento = null;
+                this.$rootScope.identificador = this.identificador;
+                this.$rootScope.tipoPix = this.tipoConsulta;
+                this.$rootScope.origem = 'identificador-pix';
+                this.$location.path(this.getPathDetalharPix());
+            }
+        }
+
+        private limpaAtributos(): void {
+            if (this.origemTotalizador) {
+                this.$rootScope.origemConsultaTotalizador = false;
+                this.origemTotalizador = false;
+            }
+            this.instituicaoFinanceira = this.todasInstituicoes;
+        }
+
+        detalharPix(pagamento: any): void {
+            this.$rootScope.pagamento = pagamento;
+            this.$rootScope.listaTablePix = this.listaTablePix;
+            this.$rootScope.dataIniPsq = this.dataIniPsq;
+            this.$rootScope.dataFimPsq = this.dataFimPsq;
+            this.$rootScope.listaInstituicoesFinanceiras = this.listaInstituicoesFinanceiras;
+            this.$rootScope.horaInicio = this.horaInicio;
+            this.$rootScope.horaFim = this.horaFim;
+            this.$rootScope.agencia = this.agencia;
+            this.$rootScope.conta = this.conta;
+            this.$rootScope.cpfCnpj = this.cpfCnpj;
+            this.$rootScope.instituicaoFinanceira = this.instituicaoFinanceira;
+            this.$rootScope.isCpfCnpjRecebedor = this.isCpfCnpjRecebedor;
+            this.$rootScope.tipoPix = this.tipoConsulta;
+            this.$rootScope.tipoOrigemCpfCnpj = this.tipoOrigemCpfCnpj;
+            if (this.listarPixPeloPgrOuNao() && this.tipoConsulta === 'recebidos') {
+                this.$rootScope.tipoConta = this.tipoConta;
+                this.$rootScope.identificador = pagamento.codigoIdentificadorPagamento;
+                pagamento.codigoIdentificacaoPagamentoBancoBrasil = 0;
+            } else {
+                this.$rootScope.identificador = null;
+            }
+            this.$rootScope.origem = 'lista-pix';
+            this.verificarPermissao(pagamento);
+            this.$location.path(this.getPathDetalharPix());
+        }
+
+        private getPathDetalharPix(): string {
+            return this.tipoConsulta === 'enviados' ? '/detalharPixEnviado' : '/detalharPixRecebido';
+        }
+
+        private carregarListaInstituicaoFinanceira(codigoPsp: number): void {
+            if (this.listaInstituicoesFinanceiras.length === 0) {
+                this.listaInstituicoesFinanceiras.push(this.todasInstituicoes);
+            }
+            this.gestaoPixService.listarPspParticipantesPix(codigoPsp)
+            .then((response: any) => {
+                this.listaInstituicoesFinanceiras =
+                    this.listaInstituicoesFinanceiras.concat(response.data.data.listaOcorrencia);
+                if ( response.data.data.indicadorContinuacaoPesquisa === 'S' ) {
+                    let codigoProximoPsp: number = this.getCodigoProximoPspListaOp(response.data.data.listaOcorrencia);
+                    this.carregarListaInstituicaoFinanceira(codigoProximoPsp);
+                }
+            });
+        }
+
+        private getCodigoProximoPspListaOp(listaOcorrenciaOp: Array<any>): number {
+            let codigoUltimoPspLista: string = listaOcorrenciaOp[listaOcorrenciaOp.length - 1].codigoIdentificadorSisPgtoBrlInstituicaoFinanceira;
+            return Number(codigoUltimoPspLista) + 1;
+        }
+
+        private verificarPermissao(pagamento: any): void {
+            this.listaMsg = [];
+            if (pagamento.indicadorClientePessoaPoliticamenteExposta === 'S' && !this.getAcesso('PPEC')) {
+                this.listaMsg.push('Cliente pessoa politicamente exposta, para acessar é necessário acesso ao papel PPEC');
+            }
+            if (pagamento.indicadorClienteRestricao === 'S' && !this.getAcesso('CDRC')) {
+                this.listaMsg.push('Cliente com cadastro restrito, para acessar é necessário acesso ao papel CDRC');
+            }
+            if (this.listaMsg.length > 0) {
+                this.$rootScope.listaMsg = this.listaMsg;
+                this.abrirModal();
+            } else {
+                this.$location.path(this.getPathDetalharPix());
+            }
+        }
+
+        private verificaDatasPesquisa(): boolean {
+
+            this.dataInvalidaFimPsq = false;
+            this.dataInvalidaIniPsq = false;
+            this.dataFuturaFimPsq = false;
+            this.dataFuturaIniPsq = false;
+            this.dataFimPsqMenorPsq = false;
+            this.dataPeriodoPesquisaSuperior = false;
+            if (this.validaData(this.dataIniPsq) === 'invalida') {
+                this.dataInvalidaIniPsq = true;
+                return false;
+            }
+            if (this.validaData(this.dataIniPsq) === 'futura') {
+                this.dataFuturaIniPsq = true;
+                return false;
+            }
+            if (this.validaData(this.dataFimPsq) === 'invalida') {
+                this.dataInvalidaFimPsq = true;
+                return false;
+            }
+            if (this.validaData(this.dataFimPsq) === 'futura') {
+                this.dataFuturaFimPsq = true;
+                return false;
+            }
+            if (this.dataIniPsq > this.dataFimPsq) {
+                this.dataFimPsqMenorPsq = true;
+                return false;
+            }
+            let dataIniPsqInMiliSeconds: number = this.dataIniPsq.getTime();
+            let dataFimPsqInMiliSeconds: number = this.dataFimPsq.getTime();
+            if ((dataFimPsqInMiliSeconds - dataIniPsqInMiliSeconds) / 86400000 > 30) {
+                this.dataPeriodoPesquisaSuperior = true;
+                return false;
+            }
+
+            return true;
+
+        }
+
+        montarEstadosPix(pagamento: any): string {
+            let textoEstadoAtualPagamentoRetorno: string = '';
+            let hasTexto = this.listaEstados.some( item => {
+                                if (item.listaCodigoTipoEstado === pagamento.codigoEstadoAtualPagamento) {
+                                    textoEstadoAtualPagamentoRetorno = item.listaNomeTipoEstado +
+                                                this.getTipoPagamento(pagamento.indicadorPagamentoQrcode);
+                                    return true;
+                                }
+                                return false;
+                            });
+
+            if (!hasTexto) {
+                textoEstadoAtualPagamentoRetorno = 'Estado não encontrado';
+            }
+            return textoEstadoAtualPagamentoRetorno;
+        }
+
+        private getTipoPagamento(indicadorPagamentoQrcode: string): string {
+            switch (indicadorPagamentoQrcode) {
+                case 'N':
+                    return ' - SEM QRCODE';
+                case 'S':
+                    return ' - COM QRCODE';
+                default:
+                    return '';
+            }
+        }
+
+        private getAcesso(authority: any): boolean {
+            let str = this.usuarioLogado.acessos;
+            let roles = str.split('#');
+            return roles.some(a => a === authority);
+        }
+
+        voltarTotalizarPix(): void {
+            delete this.$rootScope.listaTablePix;
+            this.$location.path(this.getPathTotalizadorPix());
+        }
+
+        private getPathTotalizadorPix(): string {
+            return this.origemTotalizadorQrcode ?
+                        '/totalizarPixQrcode/' + this.tipoConsulta : '/totalizarPix/' + this.tipoConsulta;
+        }
+
+        private carregarDadosInitListar(): void {
+            if ( this.origemTotalizador ) {
+                this.codigoEstadoPagamento = this.$rootScope.codigoEstadoPagamento;
+                this.siglaSistemaInicioPagamento = this.getSiglaSistema();
+                this.dataIniPsq = this.$rootScope.dataIniPsq;
+                this.dataFimPsq = this.$rootScope.dataFimPsq;
+                this.horaInicio = this.$rootScope.horaInicio;
+                this.horaFim = this.$rootScope.horaFim;
+                this.agencia = !isNaN(this.$rootScope.agencia) ? this.$rootScope.agencia : 0;
+                this.tipoConsulta = this.$rootScope.tipoPix;
+                this.conta = this.$rootScope.conta ? this.$rootScope.conta : 0;
+                this.indicadorPagamentoQrcode = this.$rootScope.indicadorPagamentoQrcode;
+            } else {
+                this.codigoEstadoPagamento = 0;
+                this.siglaSistemaInicioPagamento = '';
+            }
+        }
+
+        private listarPix(): void {
+            this.clearMessages();
+            this.exibirListaPix = false;
+            this.carregarDadosInitListar();
+
+            if ( !this.validaCampos()) {
+                return;
+            }
+
+            switch (this.tipoConsulta) {
+                case 'enviados':
+                    this.trataRequisicaoPesquisaEnviados();
+                    this.listarPixEnviados();
+                    break;
+                case 'recebidos':
+                    this.trataRequisicaoPesquisaRecebidos();
+                    this.switchListarPixRecebidos();
+                    break;
+                default:
+                    this.$rootScope.messages.push({ type: 'ERROR', text: 'Tipo de Consulta Inválido!' });
+            }
+        }
+
+        private switchListarPixRecebidos() {
+            this.indicadorPosicao = 0;
+            if (this.listarPixPeloPgrOuNao()) {
+                this.listarPixRecebidosPgr();
+            } else {
+                this.listarPixRecebidos();
+            }
+        }
+
+        private listarPixPeloPgrOuNao(): boolean {
+            return false;
+            // return ( (this.hasAgencia() && this.hasConta()) || this.hasCpfCnpj() ) &&
+            //             !this.hasIdentificador() && !this.origemTotalizador;
+        }
+
+        private getSiglaSistema(): string {
+            let sigla: string;
+            switch (this.tipoConsulta) {
+                case 'enviados':
+                    sigla = this.isExist(this.$rootScope.siglaSistemaOrigem) ? this.$rootScope.siglaSistemaOrigem.toUpperCase() : '';
+                    break;
+                case 'recebidos':
+                    sigla = this.isExist(this.$rootScope.siglaSistemaDestinoPagamento) ? this.$rootScope.siglaSistemaDestinoPagamento : '';
+                    break;
+                default:
+                    sigla = '';
+            }
+            return sigla;
+        }
+
+        private isExist(object: any): boolean {
+            return object !== undefined && object !== null;
+        }
+
+        private listarPixEnviados() {
+            this.gestaoPixService.listarPixEnviados(
+                this.indicadorPosicao,
+                this.$filter('dataToStringDB')(this.dataIniPsq),
+                this.$filter('dataToStringDB')(this.dataFimPsq),
+                this.agencia,
+                this.conta,
+                this.hasCpfCnpj() ? Number(this.cpfCnpj.replace(/[^\d]+/g, '')) : 0,
+                this.codigoTipoPessoa,
+                this.indicadorContribuinteCreditado,
+                this.codigoEstadoPagamento,
+                this.siglaSistemaInicioPagamento,
+                this.indicadorPagamentoQrcode,
+            ).then((response: any) => {
+                this.listaRespostaPix = this.listaRespostaPix.concat(response.data['data']['listaPagamento']);
+                if (response.data['data']['indicadorContinuacaoPesquisa'] === 'S' && this.listaRespostaPix.length < 401) {
+                    this.indicadorPosicao = this.indicadorPosicao + 1;
+                    this.listarPixEnviados();
+                } else {
+                    this.showAvisoLimitePaginas(response.data['data']['indicadorContinuacaoPesquisa'], this.listaRespostaPix.length);
+                    this.montarListaTablePix();
+                }
+            });
+        }
+
+        private listarPixRecebidos() {
+            let numeroChamado = 1;
+            console.log('Entrou em listarPixRecebidos');
+            this.gestaoPixService.listarPixRecebidos(
+                numeroChamado,
+                this.$filter('dataToStringDB')(this.dataIniPsq),
+                this.$filter('dataToStringDB')(this.dataFimPsq),
+                this.agencia,
+                this.conta,
+                this.hasCpfCnpj() ? Number(this.cpfCnpj.replace(/[^\d]+/g, '')) : 0,
+                this.codigoTipoPessoa,
+                this.codigoEstadoPagamento,
+                this.siglaSistemaInicioPagamento,
+                this.indicadorPagamentoQrcode
+            ).then((response: any) => {
+                this.listaRespostaPix = this.listaRespostaPix.concat(response.data['data']['listaPagamento']);
+                if (response.data['data']['indicadorContinuacaoPesquisa'] === 'S' && this.listaRespostaPix.length < 401) {
+                    numeroChamado = numeroChamado + 1;
+                    this.listarPixRecebidos();
+                } else {
+                    this.showAvisoLimitePaginas(response.data['data']['indicadorContinuacaoPesquisa'], this.listaRespostaPix.length);
+                    this.montarListaTablePix();
+                }
+            });
+        }
+
+        private listarPixRecebidosPgr(): void {
+            this.gestaoPixService.listarPixRecebidosPgr(
+                0,
+                this.agencia,
+                this.$filter('agenciaOuContaComDv')(this.conta),
+                this.$filter('dataToStringDB')(this.dataIniPsq, 'D'),
+                this.dataIniPsq.toTimeString(),
+                this.$filter('dataToStringDB')(this.dataFimPsq, 'D'),
+                this.dataFimPsq.toTimeString(),
+                this.indicadorPosicao,
+                this.hasCpfCnpj() ? Number(this.cpfCnpj.replace(/[^\d]+/g, '')) : 0,
+                0,
+                this.tipoConta.codigo
+            ).then((response: any) => {
+                this.listaRespostaPix = this.listaRespostaPix.concat(response.data['data']['listaLancamento']);
+                if (response.data['data']['indicadorContinuidade'] === 'S' && this.listaRespostaPix.length < 401) {
+                    this.indicadorPosicao = this.indicadorPosicao + 1;
+                    this.listarPixRecebidosPgr();
+                } else {
+                    this.showAvisoLimitePaginas(response.data['data']['indicadorContinuidade'], this.listaRespostaPix.length);
+                    this.montaListaTablePixRecebidoPgr();
+                }
+            });
+
+        }
+
+        private showAvisoLimitePaginas(indicadorContinuacaoPesquisa: string, tamanhoLista: number): void {
+            if (indicadorContinuacaoPesquisa === 'S' && tamanhoLista >= 400) {
+                this.$bbModal.open({
+                    templateUrl: './modulos/listar-pix/modal-aviso-limite-paginas.html',
+                    scope: this.$scope,
+                    size: 'md'
+                });
+            }
+        }
+
+        private removerDevolucoesListaRecebidosPgr(): void {
+            this.listaRespostaPix = this.listaRespostaPix.filter(
+                pix => pix.codigoIdentificadorPagamento.charAt(0) === 'E');
+        }
+
+        private montaListaTablePixRecebidoPgr(): void {
+            this.removerDevolucoesListaRecebidosPgr();
+            if ( this.listaRespostaPix.length > 0 ) {
+                this.exibirListaPix = true;
+                this.showColumnOrigDest = false;
+                this.listaRespostaPix.forEach(pix => {
+                    pix.codigoIdentificacaoPagamentoBancoBrasil = pix.codigoIdentificadorPagamento;
+                    pix.codigoEstadoAtualPagamento = pix.codigoEstadoPagamento;
+                    pix.dataPagamento = pix.timestampPagamento;
+                    pix.siglaSistemaInicioPagamento = '';
+                    pix.codigoInstituicao = pix.codigoInstituicaoFinanceiraBancoSaida;
+                    pix.numeroContribuinte = pix.numeroCpfCadastroNacPessoasJuridicas;
+                    pix.codigoDependenciaConta = pix.codigoIdentificadorAgenciaSaida;
+                    pix.numeroConta = parseInt(pix.codigoIdentificadorContaSaida);
+                    pix.valorPagamentoComVirgula = this.$filter('decimalToComma')(pix.valorPagamento);
+                    pix.textoEstadoAtualPagamento =
+                        this.$filter('nomeEstadoPagamentoLista')(pix.codigoEstadoAtualPagamento, this.tipoConsulta);
+                });
+                this.recuperaNomeInstituicao(this.listaRespostaPix);
+                this.carregarTableListaPix();
+                this.indicadorPosicao = 1;
+            } else {
+                this.showMessage('WARN', 'Não foram localizados registros para os filtros informados!');
+            }
+        }
+
+        private recuperaNomeInstituicao(listaTemp: Array<any>) {
+            this.carregaNomePsp(listaTemp).then( () => { });
+        }
+
+        private carregaNomePsp(listaTemp: Array<any>): Promise<any> {
+            let currentRequest = 0;
+            let deferred = this.$q.defer();
+
+            let makeNextRequest = () => {
+                this.getNomesPsp(listaTemp[currentRequest])
+                .then( () => {
+                    currentRequest++;
+                    if (currentRequest < listaTemp.length) {
+                        makeNextRequest();
+                    } else {
+                        deferred.resolve();
+                    }
+                });
+            };
+
+            makeNextRequest();
+
+            return deferred.promise;
+        }
+
+        private getNomesPsp(pix: any): Promise<any> {
+            let deferred = this.$q.defer();
+            let codigoPsp = this.$filter('addZeroEsquerda')(pix.codigoInstituicaoFinanceiraBancoSaida, 8);
+            this.gestaoPixService.consultaNomePsp(codigoPsp)
+            .then(  response => {
+                pix.nomeInstituicao = response;
+                deferred.resolve();
+            });
+
+            return deferred.promise;
+        }
+
+        private montarListaTablePix(): void {
+            if ( this.listaRespostaPix.length > 0 ) {
+                this.exibirListaPix = true;
+                this.showColumnOrigDest = true;
+                this.listaRespostaPix.forEach(pix => {
+                    pix.valorPagamentoComVirgula = this.$filter('decimalToComma')(pix.valorPagamento);
+                    pix.textoEstadoAtualPagamento =
+                        this.$filter('nomeEstadoPagamentoLista')(pix.codigoEstadoAtualPagamento, this.tipoConsulta);
+                });
+                this.carregarTableListaPix();
+                this.indicadorPosicao = 1;
+            } else {
+                this.showMessage('WARN', 'Não foram localizados registros para os filtros informados!');
+            }
+        }
+
+        public filterChange(): void {
+            this.listaTablePix.filter(this.filterEstado);
+            this.listaTablePix.reload();
+        }
+
+        private carregarTableListaPix(): void {
+            this.listaTablePix = new this.NgTableParams({
+                count: 10,
+                sorting: {
+                    dataPagamento: 'asc'
+                }
+            }, {
+                counts: [10, 25, 50],
+                total: this.listaRespostaPix.length,
+                getData: (params: any) => {
+                    let filteredData = params.filter() ? this.$filter('filter')(this.listaRespostaPix, params.filter()) : this.listaRespostaPix;
+                    let orderedData = params.sorting() ? this.$filter('orderBy')(filteredData, params.orderBy()) : filteredData;
+                    params.total(filteredData.length);
+                    return orderedData.slice((params.page() - 1) * params.count(), params.page() * params.count());
+                }
+            });
+            this.filterEstado.textoEstadoAtualPagamento = '';
+        }
+
+        private trataRequisicaoPesquisaEnviados(): void {
+            if ( !this.origemTotalizador ) {
+                this.indicadorContribuinteCreditado = this.isCpfCnpjRecebedor ? 'S' : 'N';
+                this.tratarRequisicaoDataHoraPesquisa();
+                this.tratarRequisicaoTipoContribuintePesquisa();
+            }
+        }
+
+        private trataRequisicaoPesquisaRecebidos(): void {
+            if ( !this.origemTotalizador ) {
+                this.tratarRequisicaoDataHoraPesquisa();
+                this.tratarRequisicaoTipoContribuintePesquisa();
+            }
+        }
+
+        private tratarRequisicaoDataHoraPesquisa(): void {
+            this.dataIniPsq = this.trataDataHora(this.dataIniPsq, this.horaInicio, 'inicial');
+            this.dataFimPsq = this.trataDataHora(this.dataFimPsq, this.horaFim, 'final');
+        }
+
+        private tratarRequisicaoTipoContribuintePesquisa(): void {
+            let hasCpfCnpj: boolean = this.hasCpfCnpj();
+            if (hasCpfCnpj) {
+                this.codigoTipoPessoa = this.getCodigoTipoPessoa();
+            }
+        }
+
+        private getCodigoTipoPessoa(): number {
+            let tamanhoCpfCnpj: number = this.cpfCnpj.replace(/[^\d]+/g, '').length;
+            if (tamanhoCpfCnpj === 11) {
+                return 1;
+            }
+            if (tamanhoCpfCnpj === 14) {
+                return 2;
+            }
+            return 0;
+        }
+
+        private hasCpfCnpj(): boolean {
+            return this.isExist(this.cpfCnpj) && this.cpfCnpj.trim() !== '';
+        }
+
+        private validaCampos(): boolean {
+            this.horaInicioInvalida = false;
+            this.horaInicioObrigatoria = false;
+
+            this.campoObrigatorio = !this.validaAnyCampoPreenchido();
+            this.grupoCampoObrigatorio = this.hasIdentificador() && (this.validaDadosBancariosGrupo() || this.hasCpfCnpj());
+            let agenciaObrigatorio: boolean = this.hasConta() && !this.hasAgencia();
+            let dataInvalida: boolean = this.hasDataInvalida();
+
+            return !this.campoObrigatorio && !this.grupoCampoObrigatorio && !dataInvalida && !agenciaObrigatorio;
+
+        }
+
+        private hasDataInvalida(): boolean {
+            let hasDataInvalida: boolean = this.hasDataInicioInvalida() || this.hasDataFimIvalida();
+            this.dataFimPsqMenorPsq = !hasDataInvalida && this.dataIniPsq > this.dataFimPsq;
+            return hasDataInvalida || this.dataFimPsqMenorPsq || this.hasTimeInvalid();
+        }
+
+        private hasDataInicioInvalida(): boolean {
+            this.dataInvalidaIniPsq = this.validaData(this.dataIniPsq) === 'invalida';
+            this.dataFuturaIniPsq = this.validaData(this.dataIniPsq) === 'futura';
+            return this.dataInvalidaIniPsq || this.dataFuturaIniPsq;
+        }
+
+        private hasDataFimIvalida(): boolean {
+            this.dataInvalidaFimPsq = this.validaData(this.dataFimPsq) === 'invalida';
+            this.dataFuturaFimPsq = this.validaData(this.dataFimPsq) === 'futura';
+            return this.dataInvalidaFimPsq || this.dataFuturaFimPsq;
+        }
+
+        private notTimeField(): boolean {
+            this.horaInicioObrigatoria = this.horaInicio === undefined ||
+                this.horaInicio === null || this.horaInicio.trim() === '';
+            this.horaFimObrigatoria = this.horaFim === undefined ||
+                this.horaFim === null || this.horaFim.trim() === '';
+            return this.horaInicioObrigatoria || this.horaFimObrigatoria;
+        }
+
+        private hasTimeInvalid(): boolean {
+            if (this.notTimeField()) {
+                return true;
+            }
+            let hrInicio = this.horaInicio.substring(0, 2);
+            let mnInicio = this.horaInicio.substring(2, 4);
+            let hrFim = this.horaFim.substring(0, 2);
+            let mnFim = this.horaFim.substring(2, 4);
+            this.dataFimPsqMenorPsq = this.isHoraFimPesquisaMenor(hrInicio, mnInicio, hrFim, mnFim);
+            return this.dataFimPsqMenorPsq || this.hasHoraInvalida(hrInicio, hrFim) || this.hasMinutoInvalido(mnInicio, mnFim);
+        }
+
+        private hasHoraInvalida(hrInicio: string, hrFim: string): boolean {
+            this.horaInicioInvalida = this.hasHoraOrMinutoInvalido(hrInicio, 24);
+            this.horaFimInvalida = this.hasHoraOrMinutoInvalido(hrFim, 24);
+            return this.horaInicioInvalida || this.horaFimInvalida;
+        }
+
+        private hasMinutoInvalido(mnInicio: string, mnFim: string): boolean {
+            this.minutoInicioInvalido = this.hasHoraOrMinutoInvalido(mnInicio, 60);
+            this.minutoFimInvalido = this.hasHoraOrMinutoInvalido(mnFim, 60);
+            return this.minutoInicioInvalido || this.minutoFimInvalido;
+        }
+
+        private hasHoraOrMinutoInvalido(horaOrMinuto: string, paramMaxValido: number): boolean {
+            return Number(horaOrMinuto) < 0 || Number(horaOrMinuto) >= paramMaxValido;
+        }
+
+        private isHoraFimPesquisaMenor(hrInicio: string, mnInicio: string,
+                hrFim: string, mnFim: string): boolean {
+            return (Number(hrInicio) + Number(mnInicio)) > (Number(hrFim) + Number(mnFim));
+        }
+
+        private validaAnyCampoPreenchido(): boolean {
+            return this.hasIdentificador() || this.hasAgencia() || this.hasCpfCnpj();
+        }
+
+        private hasIdentificador(): boolean {
+            return this.isExist(this.identificador) && this.identificador.trim() !== '';
+        }
+
+        private hasAgencia(): boolean {
+            return this.isExist(this.agencia) && Number(this.agencia) > 0;
+        }
+
+        private hasConta(): boolean {
+            return this.isExist(this.conta) && Number(this.conta) > 0;
+        }
+
+        private hasTipoConta(): boolean {
+            return this.isExist(this.tipoConta) && this.tipoConta.codigo > 0;
+        }
+
+        private validaDadosBancariosGrupo(): boolean {
+            return this.hasAgencia() || this.hasConta();
+        }
+
+        private validaData(data: Date): string {
+            if (!this.isExist(data)) {
+                return 'invalida';
+            }
+            let dt = new Date(data.getFullYear(), data.getMonth(), data.getDate(), 0, 0, 0);
+            if ( dt > (new Date()) ) {
+                return 'futura';
+            }
+            return '';
+        }
+
+        public changePagadorRecebedor(): void {
+            this.tipoOrigemCpfCnpjSelecionado = this.tipoOrigemCpfCnpj.codigo;
+            this.dadosCliente = {};
+            this.cpfCnpjRecebedor = '';
+        }
+
+        private trataDataHora(data: Date, time: string, tipo: string): Date {
+            let dt = new Date(data.getFullYear(), data.getMonth(), data.getDate(), 0, 0, 0);
+            if (time !== undefined && time !== null && time.trim() !== '') {
+                dt.setHours(Number(time.substring(0, 2)));
+                dt.setMinutes(Number(time.substring(2, 4)));
+                dt.setSeconds(tipo === 'inicial' ? 0 : 59);
+            }
+            return dt;
+        }
+
+        openPopupPsqIni(): void {
+            this.popupPsqIni.opened = true;
+        }
+
+        openPopupPsqFim(): void {
+            this.popupPsqFim.opened = true;
+        }
+
+        private abrirModal(): void {
+            this.$bbModal.open({
+                templateUrl: './modulos/modal-permissao/modal-permissao.html',
+                controller: 'modalPermissaoCtrl as vm',
+                scope: this.$rootScope,
+                size: 'md'
+            });
+        }
+
+        mascaraValor() {
+            if (this.valor.length <= 3) {
+                this.valor = '00' + this.valor;
+            }
+        }
+
+        private clearMessages(): void {
+            this.$rootScope.messages = [];
+        }
+
+        private showMessage(type: string, message: string): void {
+            this.$rootScope.messages.push({ type: type, text: message });
+        }
+
+    }
+    SedApp.controller('listarPixCtrl', ListarPixCtrl);
+}
